@@ -8,7 +8,7 @@ Releases are cut with `scripts/release.sh`, which publishes the matching
 section of this file as the GitHub release notes — so this file is the
 single source of truth for what shipped.
 
-## [Unreleased]
+## [2.1.0] — 2026-10-28
 
 ### Changed
 - 应用默认使用简体中文，可在菜单中切换英文，语言选择会自动保存。构建和卸载脚本使用相同的语言设置。
