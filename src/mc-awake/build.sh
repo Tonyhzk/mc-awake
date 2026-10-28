@@ -11,10 +11,15 @@ cd "$(dirname "$0")"
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
 APP="build/McAwake.app"
+MC_AWAKE_LANGUAGE=$(/usr/bin/defaults read com.mcawake.app McAwakeLanguage 2>/dev/null || true)
+
+localized() {
+  if [ "$MC_AWAKE_LANGUAGE" = "en" ]; then printf '%s' "$2"; else printf '%s' "$1"; fi
+}
 
 # App icon: generate once, then it's cached in Resources/
 if [ ! -f Resources/AppIcon.icns ]; then
-  echo "Generating app icon..."
+  echo "$(localized "正在生成应用图标..." "Generating app icon...")"
   swift scripts/make-icon.swift /tmp/mcawake-icon-1024.png
   ICONSET=/tmp/McAwake.iconset
   rm -rf "$ICONSET" && mkdir -p "$ICONSET"
@@ -27,11 +32,11 @@ if [ ! -f Resources/AppIcon.icns ]; then
   rm -rf "$ICONSET" /tmp/mcawake-icon-1024.png
 fi
 
-echo "Compiling..."
+echo "$(localized "正在编译..." "Compiling...")"
 mkdir -p build
-swiftc -O Sources/main.swift Sources/BatteryGuard.swift -o build/McAwake
+swiftc -parse-as-library -O Sources/main.swift Sources/BatteryGuard.swift Sources/Localization.swift -o build/McAwake
 
-echo "Assembling ${APP}..."
+echo "$(localized "正在组装 ${APP}..." "Assembling ${APP}...")"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/"
@@ -48,10 +53,10 @@ cp Resources/AppIcon.icns \
 xattr -cr "$APP"
 codesign --force --sign - "$APP" 2>/dev/null
 
-echo "Built $APP (v$VERSION)"
+echo "$(localized "已构建 ${APP}（v${VERSION}）" "Built $APP (v$VERSION)")"
 
 if [ "${1:-}" = "--install" ]; then
-  echo "Installing to /Applications..."
+  echo "$(localized "正在安装到 /Applications..." "Installing to /Applications...")"
   pkill -f "McAwake.app/Contents/MacOS/McAwake" 2>/dev/null || true
   # A pkg-installed copy is owned by root:wheel, so plain rm/cp fail with
   # "Permission denied" — after pkill has already quit the running app,
@@ -59,7 +64,7 @@ if [ "${1:-}" = "--install" ]; then
   # only for the file operations; `open` stays unprivileged so the app runs
   # as you and not as root.
   if [ -e "/Applications/McAwake.app" ] && [ ! -w "/Applications/McAwake.app" ]; then
-    echo "Existing install is root-owned (installed from the .pkg) — sudo:"
+    echo "$(localized "现有安装由 root 拥有（通过 .pkg 安装），需要管理员权限：" "Existing install is root-owned (installed from the .pkg) — sudo:")"
     sudo rm -rf "/Applications/McAwake.app"
     sudo cp -R "$APP" /Applications/
   else
@@ -67,13 +72,13 @@ if [ "${1:-}" = "--install" ]; then
     cp -R "$APP" /Applications/
   fi
   open "/Applications/McAwake.app"
-  echo "McAwake is running — look for 🦉 or 💤 in the menu bar."
+  echo "$(localized "McAwake 已运行，请在菜单栏查找 🦉 或 💤。" "McAwake is running — look for 🦉 or 💤 in the menu bar.")"
 elif [ "${1:-}" = "--release" ]; then
   mkdir -p dist
   ZIP="dist/McAwake-${VERSION}.zip"
   rm -f "$ZIP"
   ditto -c -k --keepParent "$APP" "$ZIP"
-  echo "Shareable archive: $ZIP"
+  echo "$(localized "压缩包：$ZIP" "Shareable archive: $ZIP")"
 
   # Installer package for non-developers: double-click → wizard →
   # /Applications, then postinstall launches the app as the console
@@ -90,5 +95,5 @@ elif [ "${1:-}" = "--release" ]; then
            --scripts "$PKGSCRIPTS" \
            "$PKG" >/dev/null
   rm -rf "$PKGSCRIPTS"
-  echo "Installer package: $PKG"
+  echo "$(localized "安装包：$PKG" "Installer package: $PKG")"
 fi

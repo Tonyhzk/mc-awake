@@ -131,6 +131,8 @@ cd src/mc-awake
 open build/McAwake.app
 ```
 
+应用默认使用简体中文，可在菜单的“语言 / Language”中切换为 English，选择会自动保存；构建和卸载脚本也使用该语言设置。
+
 首次选择模式时，根据系统提示输入管理员密码。应用首次启动时会注册开机登录项，可在菜单中关闭。
 
 也可运行 `./build.sh --install` 安装到 `/Applications`；该操作会退出并替换已有的 `/Applications/McAwake.app`。本版本使用与上游相同的应用和守护进程标识，不能与上游版本同时独立运行。

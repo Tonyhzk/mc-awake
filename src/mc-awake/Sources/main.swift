@@ -263,7 +263,7 @@ enum AdminResult {
 /// NSAppleScript is main-thread-only per Apple, so the runloop blocks
 /// while the password dialog is up — acceptable: the action is always
 /// user-initiated and the dialog has their full attention.
-func runAdmin(_ cmd: String, completion: @escaping (AdminResult) -> Void) {
+func runAdmin(_ cmd: String, localization: AppLocalization, completion: @escaping (AdminResult) -> Void) {
     let escaped = cmd
         .replacingOccurrences(of: "\\", with: "\\\\")
         .replacingOccurrences(of: "\"", with: "\\\"")
@@ -271,7 +271,7 @@ func runAdmin(_ cmd: String, completion: @escaping (AdminResult) -> Void) {
 
     DispatchQueue.main.async {   // let the menu close first
         guard let script = NSAppleScript(source: src) else {
-            completion(.failed("Unable to create the authorization request."))
+            completion(.failed(localization.text("无法创建管理员授权请求。", "Unable to create the authorization request.")))
             return
         }
         var err: NSDictionary?
@@ -281,7 +281,7 @@ func runAdmin(_ cmd: String, completion: @escaping (AdminResult) -> Void) {
             return
         }
         let num = (err["NSAppleScriptErrorNumber"] as? Int) ?? 0
-        let msg = (err["NSAppleScriptErrorMessage"] as? String) ?? "AppleScript error \(num)"
+        let msg = (err["NSAppleScriptErrorMessage"] as? String) ?? localization.text("AppleScript 错误 \(num)", "AppleScript error \(num)")
         completion(num == -128 ? .cancelled : .failed(msg))
     }
 }
@@ -290,6 +290,17 @@ func runAdmin(_ cmd: String, completion: @escaping (AdminResult) -> Void) {
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                    UNUserNotificationCenterDelegate {
+    let localization: AppLocalization
+
+    init(localization: AppLocalization = AppLocalization()) {
+        self.localization = localization
+        super.init()
+    }
+
+    func t(_ chinese: String, _ english: String) -> String {
+        localization.text(chinese, english)
+    }
+
     var statusItem: NSStatusItem!
     var timer: Timer?
     var watchTimer: Timer?
@@ -467,10 +478,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         for port in watchedPorts {
             let up = livePorts.contains(port)
             if let prev = lastPortUp[port], prev != up {
-                let label = portLabels[port] ?? "service"
-                notify(up ? "✅ \(label) :\(port) is back" : "⚠️ \(label) :\(port) went down",
-                       up ? "Listening again on localhost:\(port)."
-                          : "Nothing is listening on localhost:\(port) anymore.")
+                let label = portLabels[port] ?? t("服务", "service")
+                notify(up ? t("✅ \(label) :\(port) 已恢复", "✅ \(label) :\(port) is back")
+                          : t("⚠️ \(label) :\(port) 已停止", "⚠️ \(label) :\(port) went down"),
+                       up ? t("localhost:\(port) 已恢复监听。", "Listening again on localhost:\(port).")
+                          : t("localhost:\(port) 已停止监听。", "Nothing is listening on localhost:\(port) anymore."))
             }
             lastPortUp[port] = up
         }
@@ -478,9 +490,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         for t in watchedTunnels {
             let up = liveTunnels.contains(t)
             if let prev = lastTunnelUp[t], prev != up {
-                notify(up ? "✅ \(t) tunnel is back" : "⚠️ \(t) tunnel went down",
-                       up ? "The \(t) process is running again."
-                          : "The \(t) process is no longer running.")
+                notify(up ? self.t("✅ \(t) 隧道已恢复", "✅ \(t) tunnel is back")
+                          : self.t("⚠️ \(t) 隧道已停止", "⚠️ \(t) tunnel went down"),
+                       up ? self.t("\(t) 进程已恢复运行。", "The \(t) process is running again.")
+                          : self.t("\(t) 进程已停止运行。", "The \(t) process is no longer running."))
             }
             lastTunnelUp[t] = up
         }
@@ -548,19 +561,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         var tip: String
         if guardTripped {
             base = "🪫"
-            tip = "McAwake — low-battery guard tripped; re-arms when charging"
+            tip = t("McAwake — 低电量保护已启用，充电后恢复唤醒", "McAwake — low-battery guard tripped; re-arms when charging")
         } else if mode == "auto" {
             base = awake ? "🔌" : "💤"
-            tip = awake ? "McAwake — Smart Auto: plugged in, staying awake"
-                        : "McAwake — Smart Auto: on battery, normal sleep"
+            tip = awake ? t("McAwake — 智能自动：已接通电源，保持唤醒", "McAwake — Smart Auto: plugged in, staying awake")
+                        : t("McAwake — 智能自动：使用电池，允许睡眠", "McAwake — Smart Auto: on battery, normal sleep")
         } else {
             base = awake ? "🦉" : "💤"
-            tip = awake ? "McAwake — your Mac will NOT sleep (even lid closed)"
-                        : "McAwake — your Mac sleeps normally (lid close = sleep)"
+            tip = awake ? t("McAwake — 保持唤醒，合盖后也不睡眠", "McAwake — your Mac will NOT sleep (even lid closed)")
+                        : t("McAwake — 正常睡眠，合盖后进入睡眠", "McAwake — your Mac sleeps normally (lid close = sleep)")
         }
         statusItem.button?.title = trouble ? base + "⚠️" : base
-        if watchDown { tip += " · a watched service is DOWN" }
-        if daemonDead { tip += " · daemon not running (open menu to repair)" }
+        if watchDown { tip += t(" · 监控的服务已停止", " · a watched service is DOWN") }
+        if daemonDead { tip += t(" · 守护进程未运行，请打开菜单修复", " · daemon not running (open menu to repair)") }
         statusItem.button?.toolTip = tip
 
         let guardEvent = batteryGuard.observe(mode: mode, awake: awakeReading, power: power)
@@ -568,16 +581,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             if let guardEvent {
                 switch guardEvent {
                 case .tripped:
-                    notify("🛟 Low-battery guard tripped",
-                           "Normal sleep restored so the battery can't run flat. Re-arms when charging.")
+                    notify(t("🛟 低电量保护已启用", "🛟 Low-battery guard tripped"),
+                           t("已恢复正常睡眠，防止电池耗尽；充电后重新保持唤醒。", "Normal sleep restored so the battery can't run flat. Re-arms when charging."))
                 case .rearmed:
-                    notify("🦉 Staying awake again",
-                           "Battery recovered or power is back — sleep is blocked again.")
+                    notify(t("🦉 已恢复保持唤醒", "🦉 Staying awake again"),
+                           t("电量已恢复或电源已接通，已重新阻止睡眠。", "Battery recovered or power is back — sleep is blocked again."))
                 }
             } else if prev != awake && (mode == nil || mode == "normal") {
-                notify("Sleep setting changed outside McAwake",
-                       awake ? "disablesleep was turned ON by something else."
-                             : "disablesleep was turned OFF — your Mac can sleep now.")
+                notify(t("睡眠设置已被其他程序更改", "Sleep setting changed outside McAwake"),
+                       awake ? t("其他程序已启用 disablesleep。", "disablesleep was turned ON by something else.")
+                             : t("disablesleep 已关闭，Mac 现在可以睡眠。", "disablesleep was turned OFF — your Mac can sleep now."))
             }
         }
         prevAwake = awake
@@ -614,62 +627,83 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Compact status: one line, full explanation in the tooltip
         // (v1.10 lean pass — labels terse, hover for prose).
         let guardTripped = mode == "always" && !awake && !ac
-        let stateLabel = guardTripped ? "🪫 Guard active" : (awake ? "🦉 Awake" : "💤 Can sleep")
-        var powerLabel = ac ? "plugged in" : "battery"
+        let stateLabel = guardTripped ? t("🪫 电量保护中", "🪫 Guard active")
+            : (awake ? t("🦉 保持唤醒", "🦉 Awake") : t("💤 允许睡眠", "💤 Can sleep"))
+        var powerLabel = ac ? t("已接电源", "plugged in") : t("使用电池", "battery")
         if !ac, let pct = power.batteryPercent { powerLabel += " \(pct)%" }
         let statusTip = guardTripped
-            ? "Low-battery guard tripped — normal sleep allowed until charging; re-arms at 18% or on power"
-            : (awake ? "Your Mac will not sleep — even with the lid closed"
-                     : "Your Mac sleeps normally — closing the lid sleeps it")
+            ? t("低电量保护已启用，允许正常睡眠；电量达到 18% 或接通电源后恢复唤醒", "Low-battery guard tripped — normal sleep allowed until charging; re-arms at 18% or on power")
+            : (awake ? t("Mac 保持唤醒，合盖后也不睡眠", "Your Mac will not sleep — even with the lid closed")
+                     : t("Mac 正常睡眠，合盖后进入睡眠", "Your Mac sleeps normally — closing the lid sleeps it"))
         addInfo(menu, "\(stateLabel) · \(powerLabel)", tooltip: statusTip)
 
         // Daemon self-checks: the file can exist while the process is dead,
         // and an app upgrade can leave an older script installed. Both are
         // one click to fix (reinstalls the daemon in the same mode).
         if daemonArguments() != nil && !daemonProcessRunning() {
-            let repair = NSMenuItem(title: "⚠️ Repair daemon",
+            let repair = NSMenuItem(title: t("⚠️ 修复守护进程", "⚠️ Repair daemon"),
                                     action: #selector(repairDaemon), keyEquivalent: "")
             repair.target = self
-            repair.toolTip = "The daemon is installed but its process isn't running — click to reinstall it in the current mode"
+            repair.toolTip = t("守护进程已安装但未运行，点击后以当前模式重新安装", "The daemon is installed but its process isn't running — click to reinstall it in the current mode")
             menu.addItem(repair)
         } else if mode != nil && daemonScriptOutdated() {
-            let update = NSMenuItem(title: "⬆️ Update daemon",
+            let update = NSMenuItem(title: t("⬆️ 更新守护进程", "⬆️ Update daemon"),
                                     action: #selector(repairDaemon), keyEquivalent: "")
             update.target = self
-            update.toolTip = "This app version ships a newer daemon than the installed one — click to update (one password prompt)"
+            update.toolTip = t("应用包含更新的守护进程，点击后更新并输入一次管理员密码", "This app version ships a newer daemon than the installed one — click to update (one password prompt)")
             menu.addItem(update)
         }
         menu.addItem(.separator())
 
-        addMode(menu, "🦉 Always Awake", #selector(setAlwaysAwake),
+        addMode(menu, t("🦉 持续唤醒", "🦉 Always Awake"), #selector(setAlwaysAwake),
                 checked: mode == "always" || (mode == nil && awake),
-                tooltip: "Never sleep, plugged in or not — with the 15% battery guard (careful in a closed bag)")
-        addMode(menu, "🔌 Smart Auto", #selector(setSmartAuto), checked: mode == "auto",
-                tooltip: "Awake when plugged in, normal sleep on battery — bag-safe")
-        addMode(menu, "💤 Normal Sleep", #selector(setNormalSleep),
+                tooltip: t("无论是否接通电源都保持唤醒；电量不高于 15% 时启用保护，装包前请注意", "Never sleep, plugged in or not — with the 15% battery guard (careful in a closed bag)"))
+        addMode(menu, t("🔌 智能自动", "🔌 Smart Auto"), #selector(setSmartAuto), checked: mode == "auto",
+                tooltip: t("接通电源时保持唤醒，使用电池时正常睡眠", "Awake when plugged in, normal sleep on battery — bag-safe"))
+        addMode(menu, t("💤 正常睡眠", "💤 Normal Sleep"), #selector(setNormalSleep),
                 checked: mode == "normal" || (mode == nil && !awake),
-                tooltip: "macOS default — closing the lid sleeps the Mac")
+                tooltip: t("macOS 默认行为，合盖后进入睡眠", "macOS default — closing the lid sleeps the Mac"))
 
         menu.addItem(.separator())
         addServicesSection(menu)
         addClaudeSection(menu)
 
         menu.addItem(.separator())
-        let login = NSMenuItem(title: "Start at Login",
+        let login = NSMenuItem(title: t("登录时启动", "Start at Login"),
                                action: #selector(toggleLoginItem), keyEquivalent: "")
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
 
+        let language = NSMenuItem(title: t("语言", "Language"), action: nil, keyEquivalent: "")
+        let languageMenu = NSMenu()
+        for option in AppLanguage.allCases {
+            let name = option == .simplifiedChinese ? "简体中文" : "English"
+            let item = NSMenuItem(title: name, action: #selector(selectLanguage(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = option.rawValue
+            item.state = option == localization.language ? .on : .off
+            languageMenu.addItem(item)
+        }
+        language.submenu = languageMenu
+        menu.addItem(language)
+
         menu.addItem(.separator())
-        let about = NSMenuItem(title: "About McAwake…",
+        let about = NSMenuItem(title: t("关于 McAwake…", "About McAwake…"),
                                action: #selector(showAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
-        let quit = NSMenuItem(title: "Quit McAwake",
+        let quit = NSMenuItem(title: t("退出 McAwake", "Quit McAwake"),
                               action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    @objc func selectLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let language = AppLanguage(rawValue: raw) else { return }
+        localization.language = language
+        refreshIcon()
     }
 
     // What the always-awake Mac is hosting — collapsed under ONE top-level
@@ -683,11 +717,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         let total = services.count + tunnels.count
         if total == 0 && !watchDown {
-            addInfo(menu, "Servers — none detected")
+            addInfo(menu, t("服务 — 未发现", "Servers — none detected"))
             return
         }
+        let title = t("服务 (\(total))", "Servers (\(total))")
         let top = NSMenuItem(
-            title: watchDown ? "Servers (\(total)) ⚠️" : "Servers (\(total))",
+            title: watchDown ? "\(title) ⚠️" : title,
             action: nil, keyEquivalent: "")
         let serversMenu = NSMenu()
         top.submenu = serversMenu
@@ -703,28 +738,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             sub.addItem(.separator())
             for port in s.ports {
                 let url = "http://localhost:\(port)"
-                let open = NSMenuItem(title: "Open :\(port)",
+                let open = NSMenuItem(title: t("打开 :\(port)", "Open :\(port)"),
                                       action: #selector(openServiceURL(_:)), keyEquivalent: "")
                 open.target = self
                 open.representedObject = url
                 open.toolTip = url
                 sub.addItem(open)
-                let copy = NSMenuItem(title: "Copy :\(port)",
+                let copy = NSMenuItem(title: t("复制 :\(port)", "Copy :\(port)"),
                                       action: #selector(copyServiceURL(_:)), keyEquivalent: "")
                 copy.target = self
                 copy.representedObject = url
-                copy.toolTip = "Copy \(url)"
+                copy.toolTip = t("复制 \(url)", "Copy \(url)")
                 sub.addItem(copy)
             }
             sub.addItem(.separator())
             for port in s.ports {
                 let watched = watchedPorts.contains(port)
-                let w = NSMenuItem(title: "Watch :\(port)",
+                let w = NSMenuItem(title: t("监控 :\(port)", "Watch :\(port)"),
                                    action: #selector(toggleWatchPort(_:)), keyEquivalent: "")
                 w.target = self
                 w.state = watched ? .on : .off
-                w.toolTip = watched ? "Watching — click to stop down/up alerts"
-                                    : "Alert when this port stops listening (checked every 60s)"
+                w.toolTip = watched ? t("正在监控，点击后停止状态提醒", "Watching — click to stop down/up alerts")
+                                    : t("端口停止监听时提醒，每 60 秒检查一次", "Alert when this port stops listening (checked every 60s)")
                 w.representedObject = ["port": port, "label": s.name] as [String: Any]
                 sub.addItem(w)
             }
@@ -733,20 +768,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
 
         for t in tunnels {
-            let item = NSMenuItem(title: "\(t.name)  — tunnel", action: nil, keyEquivalent: "")
-            item.toolTip = "Outbound tunnel — no local URL"
+            let item = NSMenuItem(title: self.t("\(t.name)  — 隧道", "\(t.name)  — tunnel"), action: nil, keyEquivalent: "")
+            item.toolTip = self.t("出站隧道，没有本地地址", "Outbound tunnel — no local URL")
             let sub = NSMenu()
             let info = NSMenuItem(title: "PID \(t.pid)", action: nil, keyEquivalent: "")
             info.isEnabled = false
             sub.addItem(info)
             sub.addItem(.separator())
             let watched = watchedTunnels.contains(t.name)
-            let w = NSMenuItem(title: "Watch tunnel",
+            let w = NSMenuItem(title: self.t("监控隧道", "Watch tunnel"),
                                action: #selector(toggleWatchTunnel(_:)), keyEquivalent: "")
             w.target = self
             w.state = watched ? .on : .off
-            w.toolTip = watched ? "Watching — click to stop down/up alerts"
-                                : "Alert when the \(t.name) process stops (checked every 60s)"
+            w.toolTip = watched ? self.t("正在监控，点击后停止状态提醒", "Watching — click to stop down/up alerts")
+                                : self.t("\(t.name) 进程停止时提醒，每 60 秒检查一次", "Alert when the \(t.name) process stops (checked every 60s)")
             w.representedObject = t.name
             sub.addItem(w)
             item.submenu = sub
@@ -758,14 +793,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // unwatched.
         let livePorts = Set(services.flatMap { $0.ports })
         for port in watchedPorts.subtracting(livePorts).sorted() {
-            let label = portLabels[port] ?? "service"
-            let item = NSMenuItem(title: "⚠️ \(label)  :\(port) — DOWN", action: nil, keyEquivalent: "")
+            let label = portLabels[port] ?? t("服务", "service")
+            let item = NSMenuItem(title: t("⚠️ \(label)  :\(port) — 已停止", "⚠️ \(label)  :\(port) — DOWN"), action: nil, keyEquivalent: "")
             let sub = NSMenu()
-            let info = NSMenuItem(title: "Nothing listening on :\(port) right now",
+            let info = NSMenuItem(title: t("目前没有程序监听 :\(port)", "Nothing listening on :\(port) right now"),
                                   action: nil, keyEquivalent: "")
             info.isEnabled = false
             sub.addItem(info)
-            let w = NSMenuItem(title: "Stop watching :\(port)",
+            let w = NSMenuItem(title: t("停止监控 :\(port)", "Stop watching :\(port)"),
                                action: #selector(toggleWatchPort(_:)), keyEquivalent: "")
             w.target = self
             w.representedObject = ["port": port, "label": label] as [String: Any]
@@ -775,9 +810,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
         let liveTunnels = Set(tunnels.map { $0.name })
         for t in watchedTunnels.subtracting(liveTunnels).sorted() {
-            let item = NSMenuItem(title: "⚠️ \(t)  — tunnel DOWN", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: self.t("⚠️ \(t)  — 隧道已停止", "⚠️ \(t)  — tunnel DOWN"), action: nil, keyEquivalent: "")
             let sub = NSMenu()
-            let w = NSMenuItem(title: "Stop watching \(t)",
+            let w = NSMenuItem(title: self.t("停止监控 \(t)", "Stop watching \(t)"),
                                action: #selector(toggleWatchTunnel(_:)), keyEquivalent: "")
             w.target = self
             w.representedObject = t
@@ -800,7 +835,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         menu.addItem(top)
 
         for s in sessions {
-            let folder = s.cwd == "?" ? "unknown folder"
+            let folder = s.cwd == "?" ? t("未知文件夹", "unknown folder")
                 : URL(fileURLWithPath: s.cwd).lastPathComponent
             let ttyShort = s.tty.replacingOccurrences(of: "ttys", with: "tty ")
             // Session NAME leads (it's what tells twins in the same folder
@@ -812,24 +847,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             let pathInfo = NSMenuItem(title: s.cwd, action: nil, keyEquivalent: "")
             pathInfo.isEnabled = false
             sub.addItem(pathInfo)
+            let state = s.busy ? t("工作中", "busy") : t("空闲", "idle")
             let procInfo = NSMenuItem(
-                title: "PID \(s.pid) · \(ttyShort) · running \(s.etime) · \(s.busy ? "busy" : "idle")",
+                title: t("PID \(s.pid) · \(ttyShort) · 已运行 \(s.etime) · \(state)", "PID \(s.pid) · \(ttyShort) · running \(s.etime) · \(state)"),
                 action: nil, keyEquivalent: "")
             procInfo.isEnabled = false
             sub.addItem(procInfo)
             sub.addItem(.separator())
-            let jump = NSMenuItem(title: "Jump to terminal",
+            let jump = NSMenuItem(title: t("前往终端", "Jump to terminal"),
                                   action: #selector(jumpToClaudeSession(_:)), keyEquivalent: "")
             jump.target = self
-            jump.toolTip = "Bring this session's Terminal/iTerm2 tab to the front"
+            jump.toolTip = t("将此会话的 Terminal 或 iTerm2 标签页移到前台", "Bring this session's Terminal/iTerm2 tab to the front")
             jump.representedObject = s.tty
             sub.addItem(jump)
-            let reveal = NSMenuItem(title: "Reveal in Finder",
+            let reveal = NSMenuItem(title: t("在 Finder 中显示", "Reveal in Finder"),
                                     action: #selector(revealClaudeFolder(_:)), keyEquivalent: "")
             reveal.target = self
             reveal.representedObject = s.cwd
             sub.addItem(reveal)
-            let copy = NSMenuItem(title: "Copy path",
+            let copy = NSMenuItem(title: t("复制路径", "Copy path"),
                                   action: #selector(copyServiceURL(_:)), keyEquivalent: "")
             copy.target = self
             copy.toolTip = s.cwd
@@ -890,11 +926,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             }
             if !focused {
                 DispatchQueue.main.async {
+                    guard let self else { return }
                     let a = NSAlert()
-                    a.messageText = "Couldn't find that terminal window"
-                    a.informativeText = "No Terminal or iTerm2 tab owns \(dev). " +
-                        "If the session runs inside another app (VS Code, etc.), " +
-                        "McAwake can't bring it forward."
+                    a.messageText = self.t("未找到终端窗口", "Couldn't find that terminal window")
+                    a.informativeText = self.t(
+                        "没有 Terminal 或 iTerm2 标签页使用 \(dev)。如果会话运行在其他应用中（如 VS Code），McAwake 无法将其移到前台。",
+                        "No Terminal or iTerm2 tab owns \(dev). If the session runs inside another app (VS Code, etc.), McAwake can't bring it forward.")
+                    a.addButton(withTitle: self.t("好", "OK"))
                     a.runModal()
                 }
             }
@@ -990,7 +1028,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         let fd = open(daemonControlPath, O_WRONLY | O_NONBLOCK)
         guard fd >= 0 else {
-            showModeError("The daemon is not responding. Use Repair daemon in the menu.")
+            showModeError(t("守护进程没有响应，请在菜单中选择“修复守护进程”。", "The daemon is not responding. Use Repair daemon in the menu."))
             refreshIcon()
             return
         }
@@ -1000,7 +1038,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             Darwin.write(fd, buffer.baseAddress, buffer.count)
         }
         guard written == bytes.count else {
-            showModeError("The daemon could not receive the mode. Use Repair daemon in the menu.")
+            showModeError(t("守护进程无法接收模式，请在菜单中选择“修复守护进程”。", "The daemon could not receive the mode. Use Repair daemon in the menu."))
             refreshIcon()
             return
         }
@@ -1009,7 +1047,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     func installDaemon(mode: String) {
         lastModeChangeAt = Date()
-        runAdmin(installDaemonCmd(mode: mode)) { [weak self] result in
+        runAdmin(installDaemonCmd(mode: mode), localization: localization) { [weak self] result in
             guard let self else { return }
             self.lastModeChangeAt = Date()
             switch result {
@@ -1034,9 +1072,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     func showModeError(_ message: String) {
         let alert = NSAlert()
-        alert.messageText = "McAwake couldn't apply that change"
+        alert.messageText = t("McAwake 无法应用更改", "McAwake couldn't apply that change")
         alert.informativeText = message
         alert.alertStyle = .warning
+        alert.addButton(withTitle: t("好", "OK"))
         alert.runModal()
     }
 
@@ -1051,8 +1090,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             }
         } catch {
             let a = NSAlert()
-            a.messageText = "Couldn't change the login item"
+            a.messageText = t("无法更改登录项", "Couldn't change the login item")
             a.informativeText = error.localizedDescription
+            a.addButton(withTitle: t("好", "OK"))
             a.runModal()
         }
     }
@@ -1060,12 +1100,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     @objc func showAbout() {
         let a = NSAlert()
         a.messageText = "McAwake \(appVersion) 🦉"
-        a.informativeText = """
+        a.informativeText = t("""
+            让 Mac 保持唤醒，合盖后也能继续运行。
+
+            模式：
+            🦉 持续唤醒：无论是否接通电源都保持唤醒。电池电量不高于 15% 时恢复正常睡眠，\
+            电量达到 18% 或接通电源后重新保持唤醒，防止电池耗尽。
+            🔌 智能自动：接通电源时保持唤醒，使用电池时正常睡眠。
+            💤 正常睡眠：使用 macOS 默认行为。
+
+            菜单还会显示本机当前运行的服务和隧道，可打开或复制本地服务地址。
+
+            首次切换模式时需要输入管理员密码以安装 root 守护进程，\
+            此后切换模式无需再次输入密码。守护进程只接受三种模式，并通过 pmset disablesleep 管理睡眠。
+            """, """
             Keeps your Mac awake — even with the lid closed.
 
             Modes:
             🦉 Always Awake — the Mac never sleeps, plugged in or not. A \
-            low-battery guard restores normal sleep below 15% on battery \
+            low-battery guard restores normal sleep at or below 15% on battery \
             (re-arms at 18% or on the charger), so a forgotten Mac can't \
             run itself flat.
             🔌 Smart Auto — awake whenever it's plugged in, normal sleep \
@@ -1078,32 +1131,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             The first mode change asks for your admin password to install \
             a root daemon. Later mode changes do not need the password. \
             The daemon only accepts the three modes and uses pmset disablesleep.
-            """
+            """)
+        a.addButton(withTitle: t("好", "OK"))
         a.runModal()
     }
 
     @objc func quitApp() { NSApp.terminate(nil) }
 }
 
-// Debug/verification hook: dump service detection to stdout and exit.
-// Used by humans and CI-adjacent smoke checks; not part of the app UI.
-if CommandLine.arguments.contains("--print-services") {
-    for s in detectLocalServices() {
-        print("\(s.name)\tpid=\(s.pid)\tports=\(s.ports.map(String.init).joined(separator: ","))")
-    }
-    for t in detectTunnels() {
-        print("\(t.name)\tpid=\(t.pid)\ttunnel")
-    }
-    exit(0)
-}
-if CommandLine.arguments.contains("--print-claude-sessions") {
-    for s in detectClaudeSessions() {
-        print("\(s.tty)\tpid=\(s.pid)\t\(s.name ?? "-")\t\(s.busy ? "busy" : "idle")\t\(s.etime)\t\(s.cwd)")
-    }
-    exit(0)
-}
+#if !LOCALIZATION_TESTING
+@main
+struct McAwakeApplication {
+    static func main() {
+        // Debug/verification hook: dump service detection to stdout and exit.
+        // Used by humans and CI-adjacent smoke checks; not part of the app UI.
+        if CommandLine.arguments.contains("--print-services") {
+            for s in detectLocalServices() {
+                print("\(s.name)\tpid=\(s.pid)\tports=\(s.ports.map(String.init).joined(separator: ","))")
+            }
+            for t in detectTunnels() {
+                print("\(t.name)\tpid=\(t.pid)\ttunnel")
+            }
+            return
+        }
+        if CommandLine.arguments.contains("--print-claude-sessions") {
+            for s in detectClaudeSessions() {
+                print("\(s.tty)\tpid=\(s.pid)\t\(s.name ?? "-")\t\(s.busy ? "busy" : "idle")\t\(s.etime)\t\(s.cwd)")
+            }
+            return
+        }
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        withExtendedLifetime(delegate) { app.run() }
+    }
+}
+#endif

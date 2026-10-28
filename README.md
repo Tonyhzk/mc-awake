@@ -4,9 +4,10 @@ McAwake 是一款 macOS 菜单栏工具，可在 MacBook 合盖后保持运行�
 
 ## 功能
 
-- **Always Awake**：接通电源或使用电池时保持唤醒。电量不高于 15% 时恢复睡眠，达到 18% 或接通电源后重新保持唤醒。
-- **Smart Auto**：接通电源时保持唤醒，使用电池时允许正常睡眠。
-- **Normal Sleep**：恢复 macOS 正常睡眠。
+- **持续唤醒 / Always Awake**：接通电源或使用电池时保持唤醒。电量不高于 15% 时恢复睡眠，达到 18% 或接通电源后重新保持唤醒。
+- **智能自动 / Smart Auto**：接通电源时保持唤醒，使用电池时允许正常睡眠。
+- **正常睡眠 / Normal Sleep**：恢复 macOS 正常睡眠。
+- 默认使用简体中文，可在菜单的“语言”中切换为 English，选择会自动保存。
 - 菜单栏显示当前电源状态，保留上游的本地服务查看、通知和 Claude Code 会话切换功能。
 
 ## 系统要求
@@ -43,9 +44,10 @@ open build/McAwake.app
 cd src/mc-awake
 bash tests/test-daemon-logic.sh
 bash tests/test-battery-guard.sh
+bash tests/test-localization.sh
 ```
 
-测试使用模拟系统命令和电池状态，不需要管理员权限，也不会修改真实的电源设置。
+守护进程和电池测试使用模拟的系统命令与电池状态；语言测试读取当前系统状态，并使用独立的临时偏好域。测试不需要管理员权限，也不会修改真实的电源设置。
 
 ## 卸载
 
