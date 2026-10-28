@@ -53,22 +53,22 @@ func shell(_ cmd: String) -> String {
     return String(data: data, encoding: .utf8) ?? ""
 }
 
-func sleepDisabledNow() -> Bool {
+func sleepDisabledNow() -> Bool? {
     for line in shell("/usr/bin/pmset -g").split(separator: "\n")
     where line.contains("SleepDisabled") {
-        return line.contains("1")
+        let fields = line.split(whereSeparator: { $0.isWhitespace })
+        guard fields.count >= 2 else { return nil }
+        switch fields[1] {
+        case "0": return false
+        case "1": return true
+        default: return nil
+        }
     }
-    return false
+    return nil
 }
 
-func onACPower() -> Bool {
-    shell("/usr/bin/pmset -g ps").contains("AC Power")
-}
-
-func batteryPercent() -> Int? {
-    let out = shell("/usr/bin/pmset -g ps")
-    guard let r = out.range(of: #"\d+%"#, options: .regularExpression) else { return nil }
-    return Int(out[r].dropLast())
+func powerSnapshot() -> PowerSnapshot {
+    PowerSnapshot(output: shell("/usr/bin/pmset -g ps"))
 }
 
 func daemonArguments() -> [String]? {
@@ -302,6 +302,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     // Sleep-state transition tracking (guard trip / external change).
     var prevAwake: Bool?
+    var batteryGuard = BatteryGuardTracker()
     var lastModeChangeAt = Date.distantPast
 
     // Detection caches: the menu builds INSTANTLY from these; a
@@ -524,9 +525,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     func refreshIcon() {
-        let awake = sleepDisabledNow()
+        let awakeReading = sleepDisabledNow()
+        let awake = awakeReading ?? false
         let mode = installedDaemonMode()
-        let ac = onACPower()
+        let power = powerSnapshot()
+        let ac = power.source == .ac
 
         // Trouble = anything the user should glance-check: a watched
         // service/tunnel currently down, or the daemon dead behind an
@@ -560,18 +563,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         if daemonDead { tip += " · daemon not running (open menu to repair)" }
         statusItem.button?.toolTip = tip
 
-        // Sleep-state transitions the user didn't just cause themselves:
-        // the guard acting (mode always), or an outside change (mode nil).
-        // Smart Auto's routine plug/unplug flips are deliberately silent.
-        if let prev = prevAwake, prev != awake,
-           Date().timeIntervalSince(lastModeChangeAt) > 25 {
-            let mode = installedDaemonMode()
-            if mode == "always" {
-                notify(awake ? "🦉 Staying awake again"
-                             : "🛟 Low-battery guard tripped",
-                       awake ? "Battery recovered or power is back — sleep is blocked again."
-                             : "Normal sleep restored so the battery can't run flat. Re-arms when charging.")
-            } else if mode == nil || mode == "normal" {
+        let guardEvent = batteryGuard.observe(mode: mode, awake: awakeReading, power: power)
+        if let prev = prevAwake, Date().timeIntervalSince(lastModeChangeAt) > 25 {
+            if let guardEvent {
+                switch guardEvent {
+                case .tripped:
+                    notify("🛟 Low-battery guard tripped",
+                           "Normal sleep restored so the battery can't run flat. Re-arms when charging.")
+                case .rearmed:
+                    notify("🦉 Staying awake again",
+                           "Battery recovered or power is back — sleep is blocked again.")
+                }
+            } else if prev != awake && (mode == nil || mode == "normal") {
                 notify("Sleep setting changed outside McAwake",
                        awake ? "disablesleep was turned ON by something else."
                              : "disablesleep was turned OFF — your Mac can sleep now.")
@@ -603,8 +606,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     func buildMenu(_ menu: NSMenu) {
         menu.removeAllItems()
-        let awake = sleepDisabledNow()
-        let ac = onACPower()
+        let awake = sleepDisabledNow() ?? false
+        let power = powerSnapshot()
+        let ac = power.source == .ac
         let mode = installedDaemonMode()  // nil | "normal" | "auto" | "always"
 
         // Compact status: one line, full explanation in the tooltip
@@ -612,7 +616,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         let guardTripped = mode == "always" && !awake && !ac
         let stateLabel = guardTripped ? "🪫 Guard active" : (awake ? "🦉 Awake" : "💤 Can sleep")
         var powerLabel = ac ? "plugged in" : "battery"
-        if !ac, let pct = batteryPercent() { powerLabel += " \(pct)%" }
+        if !ac, let pct = power.batteryPercent { powerLabel += " \(pct)%" }
         let statusTip = guardTripped
             ? "Low-battery guard tripped — normal sleep allowed until charging; re-arms at 18% or on power"
             : (awake ? "Your Mac will not sleep — even with the lid closed"

@@ -42,9 +42,10 @@ open build/McAwake.app
 ```bash
 cd src/mc-awake
 bash tests/test-daemon-logic.sh
+bash tests/test-battery-guard.sh
 ```
 
-测试使用模拟系统命令，不需要管理员权限，也不会修改真实的电源设置。
+测试使用模拟系统命令和电池状态，不需要管理员权限，也不会修改真实的电源设置。
 
 ## 卸载
 

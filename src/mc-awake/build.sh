@@ -29,7 +29,7 @@ fi
 
 echo "Compiling..."
 mkdir -p build
-swiftc -O Sources/main.swift -o build/McAwake
+swiftc -O Sources/main.swift Sources/BatteryGuard.swift -o build/McAwake
 
 echo "Assembling ${APP}..."
 rm -rf "$APP"
