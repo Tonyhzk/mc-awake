@@ -999,6 +999,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         return """
             set -e; \
             /bin/launchctl bootout system/\(daemonLabel) 2>/dev/null || true; \
+            i=0; \
+            while /bin/launchctl print system/\(daemonLabel) >/dev/null 2>&1 && [ "$i" -lt 20 ]; do \
+              /bin/sleep 0.25; i=$((i + 1)); \
+            done; \
             /usr/bin/install -d -o root -g wheel -m 755 \(shellQuote(daemonDirectory)) \(shellQuote(daemonStateDirectory)); \
             /usr/bin/install -o root -g wheel -m 755 \(shellQuote("\(res)/mcawake-auto.sh")) \(shellQuote(daemonScriptPath)); \
             /usr/bin/install -o root -g wheel -m 644 \(shellQuote("\(res)/\(daemonLabel).plist")) \(shellQuote(daemonPlistPath)); \
@@ -1007,7 +1011,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             /usr/sbin/chown root:wheel \(shellQuote(daemonModePath)); \
             /bin/chmod 644 \(shellQuote(daemonModePath)); \
             /bin/rm -f /usr/local/bin/mcawake-auto.sh; \
-            /bin/launchctl bootstrap system \(shellQuote(daemonPlistPath))
+            /bin/launchctl enable system/\(daemonLabel) 2>/dev/null || true; \
+            n=0; last=""; \
+            while [ "$n" -lt 3 ]; do \
+              if out=$(/bin/launchctl bootstrap system \(shellQuote(daemonPlistPath)) 2>&1); then \
+                last=""; break; \
+              fi; \
+              last="$out"; n=$((n + 1)); \
+              if [ "$n" -lt 3 ]; then \
+                /bin/launchctl bootout system/\(daemonLabel) 2>/dev/null || true; \
+                /bin/sleep 1; \
+                /bin/launchctl enable system/\(daemonLabel) 2>/dev/null || true; \
+              fi; \
+            done; \
+            if [ -n "$last" ]; then printf '%s\\n' "$last" >&2; exit 1; fi
             """
     }
 
