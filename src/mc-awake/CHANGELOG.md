@@ -8,7 +8,7 @@ Releases are cut with `scripts/release.sh`, which publishes the matching
 section of this file as the GitHub release notes — so this file is the
 single source of truth for what shipped.
 
-## [Unreleased]
+## [2.1.1] — 2026-11-11
 
 ### Fixed
 - 修复切换或修复守护进程时，系统已有同名服务或该服务被 launchd 禁用后反复报 `Bootstrap failed: 5: Input/output error` 的问题。安装流程现在会等待旧服务卸载、自动启用服务，并在加载失败时重试。
